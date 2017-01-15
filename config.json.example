@@ -1,0 +1,10 @@
+{
+	"acl": [
+		{ "path": "/secure", "valid_users": ["test"] },
+	],
+	"users": [
+		{ "name": "test", "pass": "$apr1$x2SDulpA$T0KDX5AKRtI1hOMJc4z2q/" },
+	],
+	"site": "example.com",
+	"path": "/app"
+}

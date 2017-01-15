@@ -1,0 +1,15 @@
+{
+    "name": "sroz.net/auth",
+    "type": "project",
+    "require": {
+        "yubico/u2flib-server": "^1.0",
+        "whitehat101/apr1-md5": "^1.0"
+    },
+    "license": "BSD",
+    "authors": [
+        {
+            "name": "Josh Watts",
+            "email": "josh@sroz.net"
+        }
+    ]
+}
