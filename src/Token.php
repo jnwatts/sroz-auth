@@ -13,6 +13,7 @@ class Token {
         $value = uniqid();
         $_SESSION["token"] = $value;
         setcookie($token["name"], $value, time()+$token["lifetime"], $token["path"], $token["domain"], true, true);
+        return $value;
     }
 
     public function get() {

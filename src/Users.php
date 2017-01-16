@@ -18,9 +18,19 @@ class Users {
         return null;
     }
 
-    public function validate($user, $pass) {
+    public function get_by_token($token) {
+        if ($token && isset($_SESSION["user"])) {
+            return $this->get($_SESSION["user"]);
+        }
+        return null;
+    }
+
+    public function validate($user, $pass, $token) {
         if ($user) {
-            return APR1_MD5::check($pass, $user->hash);
+            $valid = APR1_MD5::check($pass, $user->hash);
+            if ($valid)
+                $_SESSION["user"] = $user->name;
+            return $valid;
         }
         return false;
     }

@@ -19,24 +19,18 @@ class Auth {
             session_start();
     }
 
-    public function users() {
-        return $this->users;
-    }
-
     public function current_user() {
         $token = $this->token->get();
         if (!$token)
             return null;
 
-        //TODO: Get user from DB where token
-        return $this->users->get($_SESSION["user"]);
+        return $this->users->get_by_token($token);
     }
 
     public function login($name, $pass) {
         $user = $this->users->get($name);
-        if ($this->users->validate($user, $pass)) {
-            $this->token->new();
-            $_SESSION["user"] = $user->name;
+        $token = $this->token->new();
+        if ($this->users->validate($user, $pass, $token)) {
             return $user;
         } else {
             return null;
