@@ -60,7 +60,18 @@ class U2f {
             return ["reg" => $reg, "sign" => $sign];
         } else {
             $reg = $this->lib->doRegister($reg_request, $reg_response);
-            $this->addRegistration($reg);
+            if ($reg)
+                $this->addRegistration($reg);
+        }
+    }
+
+    public function authenticate($auth_request = null, $auth_response = null) {
+        if (!$auth_request) {
+            return $this->lib->getAuthenticateData($this->registrations());
+        } else {
+            $reg = $this->lib->doAuthenticate($auth_request, $this->registrations(), $auth_response);
+            if ($reg)
+                $this->addRegistration($reg);
         }
     }
 }

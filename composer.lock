@@ -4,7 +4,6 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#composer-lock-the-lock-file",
         "This file is @generated automatically"
     ],
-    "hash": "b0ba9e30552e0a7b9f43f82818f8716a",
     "content-hash": "544ff6f81bff0fc568aca38ed64ad30d",
     "packages": [
         {
@@ -49,7 +48,7 @@
                 "MD5",
                 "apr1"
             ],
-            "time": "2015-02-11 11:06:42"
+            "time": "2015-02-11T11:06:42+00:00"
         },
         {
             "name": "yubico/u2flib-server",
@@ -80,7 +79,7 @@
             ],
             "description": "Library for U2F implementation",
             "homepage": "https://developers.yubico.com/php-u2flib-server",
-            "time": "2016-02-19 09:47:51"
+            "time": "2016-02-19T09:47:51+00:00"
         }
     ],
     "packages-dev": [],

@@ -43,27 +43,42 @@ if ($valid && $redirect) {
 
 if ($user && isset($_REQUEST["u2f"])) {
     $u2f = $_REQUEST["u2f"];
-    switch ($u2f) {
-        case "register":
-            $data = $auth->u2f->register();
-            echo json_encode($data);
-            break;
-        case "register2":
-            $reg = isset($_REQUEST['reg']) ? json_decode($_REQUEST['reg']) : null;
-            $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
-            $data = $auth->u2f->register($reg, $response);
-            echo json_encode($auth->u2f->keyHandles());
-            break;
-        case "unregister":
-            $key = isset($_REQUEST['key']) ? $_REQUEST['key'] : null;
-            if ($key)
-                $auth->u2f->removeRegistration($key);
-            echo json_encode($auth->u2f->keyHandles());
-            break;
-        default:
-            echo "Invalid operation";
-            http_response_code(500);
-            break;
+    try {
+        switch ($u2f) {
+            case "register":
+                $data = $auth->u2f->register();
+                echo json_encode($data);
+                break;
+            case "register2":
+                $reg = isset($_REQUEST['reg']) ? json_decode($_REQUEST['reg']) : null;
+                $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
+                $auth->u2f->register($reg, $response);
+                echo json_encode($auth->u2f->keyHandles());
+                break;
+            case "unregister":
+                $key = isset($_REQUEST['key']) ? $_REQUEST['key'] : null;
+                if ($key)
+                    $auth->u2f->removeRegistration($key);
+                echo json_encode($auth->u2f->keyHandles());
+                break;
+            case "authenticate":
+                $data = $auth->u2f->authenticate();
+                echo json_encode($data);
+                break;
+            case "authenticate2":
+                $req = isset($_REQUEST['auth']) ? json_decode($_REQUEST['auth']) : null;
+                $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
+                $auth->u2f->authenticate([$req], $response);
+                echo json_encode($auth->u2f->keyHandles());
+                break;
+            default:
+                echo "Invalid operation";
+                http_response_code(500);
+                break;
+        }
+    } catch (Error $e) {
+        echo $e;
+        http_response_code(400);
     }
     exit;
 }
@@ -88,22 +103,24 @@ if ($user && isset($_REQUEST["u2f"])) {
                     }).done(auth.register_callback);
                 },
                 register_callback: function(data) {
-                    // console.log("Register request", data);
+                    console.log("Register request", data);
                     auth.msg("Press U2F button now...");
-                    var reg = data.reg;
-                    u2f.register([data.reg], data.sign, function(data) {
-                        // console.log("Register callback", data);
-                        auth.msg("Adding to registrations...");
+                    var request = data.reg;
+                    var appId = request.appId;
+                    var registerRequests = [{version: request.version, challenge: request.challenge}];
+                    u2f.register(appId, registerRequests, data.sign, function(data) {
+                        console.log("Register callback", data);
+                        auth.msg("Registering...");
                         $.ajax({
                             type: "POST",
                             url: auth.uri,
-                            data: {u2f: "register2", reg: JSON.stringify(reg), response: JSON.stringify(data)},
+                            data: {u2f: "register2", reg: JSON.stringify(request), response: JSON.stringify(data)},
                             dataType: "json"
                         }).done(auth.register2_callback);
                     });
                 },
                 register2_callback: function(data) {
-                    // console.log("Register2 callback", data);
+                    console.log("Register2 callback", data);
                     auth.msg("");
                     auth.update_keys(data);
                 },
@@ -129,6 +146,41 @@ if ($user && isset($_REQUEST["u2f"])) {
                         keys.append(k);
                     });
                 },
+                authenticate: function() {
+                    $.ajax({
+                        type: "POST",
+                        url: auth.uri,
+                        data: {u2f: "authenticate"},
+                        dataType: "json"
+                    }).done(auth.authenticate_callback);
+                },
+                authenticate_callback: function(data) {
+                    console.log("Auth request", data);
+                    auth.msg("Press U2F button now...");
+                    var request = data[0];
+                    var appId = request.appId;
+                    var challenge = request.challenge;
+                    var registeredKeys = [{version: request.version, keyHandle: request.keyHandle}];
+                    u2f.sign(appId, challenge, registeredKeys, function(data) {
+                        console.log("Auth callback", data);
+                        if (data.errorCode) {
+                            auth.msg("Failed to sign: " + data.errorCode);
+                            return false;
+                        }
+                        auth.msg("Authenticating...");
+                        $.ajax({
+                            type: "POST",
+                            url: auth.uri,
+                            data: {u2f: "authenticate2", auth: JSON.stringify(request), response: JSON.stringify(data)},
+                            dataType: "json"
+                        }).done(auth.authenticate_callback2);
+                    });
+                },
+                authenticate_callback2: function(data) {
+                    console.log("Register2 callback", data);
+                    auth.msg("");
+                    auth.update_keys(data);
+                },
                 msg: function(str) {
                     $('#msg').html(str);
                 },
@@ -137,6 +189,10 @@ if ($user && isset($_REQUEST["u2f"])) {
 
             $('#register').on('click', function() {
                 auth.register();
+            });
+
+            $('#authenticate').on('click', function() {
+                auth.authenticate();
             });
 
             auth.update_keys(auth.key_handles);
@@ -159,6 +215,7 @@ if ($user && isset($_REQUEST["u2f"])) {
     <div id="key_handles">
     </div>
     <input id="register" value="Register U2F" type="button">
+    <input id="authenticate" value="authenticate U2F" type="button">
 </div>
 <form method="post" action="<?=$_SERVER["PHP_SELF"]?>">
 <input name="logout" value="Logout" type="submit">
@@ -172,6 +229,5 @@ if ($user && isset($_REQUEST["u2f"])) {
 <input type="submit">
 </form>
 <?}?>
-
 </body>
 </html>
