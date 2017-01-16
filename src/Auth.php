@@ -6,12 +6,14 @@ class Auth {
     public $users;
     public $token;
     public $access;
+    public $u2f;
 
     public function __construct(&$config) {
         $this->config =& $config;
         $this->users = new Users($config);
         $this->token = new Token($config);
         $this->access = new Access($config);
+        $this->u2f = new U2f($config);
 
         if (session_status() == PHP_SESSION_NONE)
             session_start();

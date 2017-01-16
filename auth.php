@@ -4,6 +4,7 @@ require __BASE_DIR__ . '/vendor/autoload.php';
 
 $config = json_decode(file_get_contents(__DIR__ . '/config.json'), true);
 $auth = new Auth\Auth($config);
+$msg = "";
 
 if (defined("__AUTH_INCLUDE__")) {
     // We've been included by another script
@@ -17,7 +18,6 @@ $user = $auth->current_user();
 if (!$user && isset($_REQUEST["user"]) && isset($_REQUEST["pass"]))
     $user = $auth->login($_REQUEST["user"], $_REQUEST["pass"]);
 
-$msg = "";
 $redirect = isset($_REQUEST["redirect"]) ? $_REQUEST["redirect"] : "";
 $uri = isset($_SERVER["HTTP_X_ORIGINAL_URI"]) ? $_SERVER["HTTP_X_ORIGINAL_URI"] : $redirect;
 $check = isset($_REQUEST["check"]);
@@ -40,20 +40,126 @@ if ($valid && $redirect) {
     header("Location: https://".$_SERVER['HTTP_HOST'].$redirect);
     exit;
 }
+
+if ($user && isset($_REQUEST["u2f"])) {
+    $u2f = $_REQUEST["u2f"];
+    switch ($u2f) {
+        case "register":
+            $data = $auth->u2f->register();
+            echo json_encode($data);
+            break;
+        case "register2":
+            $reg = isset($_REQUEST['reg']) ? json_decode($_REQUEST['reg']) : null;
+            $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
+            $data = $auth->u2f->register($reg, $response);
+            echo json_encode($auth->u2f->keyHandles());
+            break;
+        case "unregister":
+            $key = isset($_REQUEST['key']) ? $_REQUEST['key'] : null;
+            if ($key)
+                $auth->u2f->removeRegistration($key);
+            echo json_encode($auth->u2f->keyHandles());
+            break;
+        default:
+            echo "Invalid operation";
+            http_response_code(500);
+            break;
+    }
+    exit;
+}
+
 ?>
-<pre>
-</pre>
-<?if ($msg) {?>
+<html>
+<head>
+    <script src="https://code.jquery.com/jquery-3.1.1.min.js"
+        integrity="sha256-hVVnYaiADRTO2PzUGmuLJr8BLUSjGIZsDYGmIJLv2b8="
+        crossorigin="anonymous"></script>
+    <script src="/u2f-api.js"></script>
+    <script>
+        $(function() {
+            window.auth = {
+                uri: "<?=$_SERVER["PHP_SELF"]?>",
+                register: function() {
+                    $.ajax({
+                        type: "POST",
+                        url: auth.uri,
+                        data: {u2f: "register"},
+                        dataType: "json"
+                    }).done(auth.register_callback);
+                },
+                register_callback: function(data) {
+                    // console.log("Register request", data);
+                    auth.msg("Press U2F button now...");
+                    var reg = data.reg;
+                    u2f.register([data.reg], data.sign, function(data) {
+                        // console.log("Register callback", data);
+                        auth.msg("Adding to registrations...");
+                        $.ajax({
+                            type: "POST",
+                            url: auth.uri,
+                            data: {u2f: "register2", reg: JSON.stringify(reg), response: JSON.stringify(data)},
+                            dataType: "json"
+                        }).done(auth.register2_callback);
+                    });
+                },
+                register2_callback: function(data) {
+                    // console.log("Register2 callback", data);
+                    auth.msg("");
+                    auth.update_keys(data);
+                },
+                unregister: function(keyHandle) {
+                    $.ajax({
+                        type: "POST",
+                        url: auth.uri,
+                        data: {u2f: "unregister", key: keyHandle},
+                        dataType: "json"
+                    }).done(auth.update_keys);
+                },
+                update_keys: function(keyHandles) {
+                    if (keyHandles)
+                        auth.key_handles = keyHandles;
+                    var keys = $('#key_handles');
+                    keys.html("");
+                    auth.key_handles.forEach(function (keyHandle, i) {
+                        var k = $("<input type=\"button\">");
+                        k.prop("value", "Unregister #" + i);
+                        k.on('click', function() {
+                            auth.unregister(keyHandle);
+                        });
+                        keys.append(k);
+                    });
+                },
+                msg: function(str) {
+                    $('#msg').html(str);
+                },
+                key_handles: <?=json_encode($auth->u2f->keyHandles())?>,
+            };
+
+            $('#register').on('click', function() {
+                auth.register();
+            });
+
+            auth.update_keys(auth.key_handles);
+        });
+    </script>
+</head>
+<body>
+<?if (http_response_code() != 200) {?>
 <h1>Error <?=http_response_code()?></h1>
-<span class="error"><?=$msg?></span>
 <?}?>
+<div id="msg"><?=$msg?></div>
 <?if ($user) {?>
-TODO:
+<h2>TODO:</h2>
 <ul>
 <li>u2f</li>
 <li>Remove reliance on session</li>
 </ul>
 <div>
+<div>
+    <div id="key_handles">
+    </div>
+    <input id="register" value="Register U2F" type="button">
+</div>
 <form method="post" action="<?=$_SERVER["PHP_SELF"]?>">
 <input name="logout" value="Logout" type="submit">
 </form>
@@ -66,3 +172,6 @@ TODO:
 <input type="submit">
 </form>
 <?}?>
+
+</body>
+</html>
