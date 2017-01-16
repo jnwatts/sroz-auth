@@ -4,6 +4,9 @@
   "description": "",
   "main": "auth.php",
   "dependencies": {
+    "grunt": "^1.0.1",
+    "grunt-contrib-concat": "^1.0.1",
+    "grunt-contrib-uglify": "^2.0.0",
     "u2f-api-polyfill": "^0.4.3"
   },
   "devDependencies": {},
