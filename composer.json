@@ -11,5 +11,8 @@
             "name": "Josh Watts",
             "email": "josh@sroz.net"
         }
-    ]
+    ],
+    "autoload": {
+        "psr-4": {"Auth\\": "src/"}
+    }
 }
