@@ -7,29 +7,58 @@ class U2f {
 
     public function __construct(&$config) {
         $this->config =& $config;
-        $this->lib = new \u2flib_server\U2F($config["u2f"]["appId"]);
+        $this->lib = new \u2flib_server\U2F($this->api());
+
+        if (session_status() == PHP_SESSION_NONE)
+            session_start();
     }
 
-    public function registrations() {
-        return isset($_SESSION['u2f_registrations']) ? $_SESSION['u2f_registrations'] : [];
+    public function api() {
+        return $this->config["u2f"]["appId"];
     }
 
-    public function keyHandles() {
-        $reg = $this->registrations();
+    public function validRegistrationCount($user) {
+        $count = 0;
+
+        $regs = $this->registrations($user);
+        foreach ($regs as $r) {
+            if ($r->counter >= 0)
+                $count++;
+        }
+
+        return $count;
+    }
+
+    public function registrations($user) {
+        $regs = null;
+
+        if (@isset($_SESSION['u2f_registrations'][$user->name]))
+            @$regs = json_decode($_SESSION['u2f_registrations'][$user->name]);
+
+        if ($regs === null)
+            $regs = [];
+
+        return $regs;
+    }
+
+    public function keyHandles($user) {
         $keyHandles = [];
-        foreach ($reg as $r) {
+
+        $regs = $this->registrations($user);
+        foreach ($regs as $r) {
             $keyHandles[] = $r->keyHandle;
         }
+
         return $keyHandles;
     }
 
-    public function addRegistration($new_reg) {
-        $regs = $this->registrations();
+    public function addRegistration($user, $new_reg) {
         $found = false;
 
-        foreach ($regs as $reg) {
-            if ($reg->keyHandle == $new_reg->keyHandle) {
-                $reg = $new_reg;
+        $regs = $this->registrations($user);
+        foreach ($regs as &$r) {
+            if ($r->keyHandle == $new_reg->keyHandle) {
+                $r = $new_reg;
                 $found = true;
                 break;
             }
@@ -38,40 +67,43 @@ class U2f {
         if (!$found)
             $regs[] = $new_reg;
 
-        $_SESSION['u2f_registrations'] = $regs;
+        $_SESSION['u2f_registrations'][$user->name] = json_encode($regs);
     }
 
-    public function removeRegistration($keyHandle) {
-        $regs = $this->registrations();
+    public function removeRegistration($user, $keyHandle) {
         $found = false;
 
-        foreach ($regs as $i => &$reg) {
-            if ($reg->keyHandle == $keyHandle) {
+        $regs = $this->registrations($user);
+        foreach ($regs as $i => &$r) {
+            if ($r->keyHandle == $keyHandle) {
                 unset($regs[$i]);
             }
         }
 
-        $_SESSION['u2f_registrations'] = $regs;
+        $_SESSION['u2f_registrations'][$user->name] = json_encode($regs);
     }
 
-    public function register($reg_request = null, $reg_response = null) {
+    public function register($user, $reg_request = null, $reg_response = null) {
         if (!$reg_request) {
-            list($reg, $sign) = $this->lib->getRegisterData($this->registrations());
+            list($reg, $sign) = $this->lib->getRegisterData($this->registrations($user));
             return ["reg" => $reg, "sign" => $sign];
         } else {
             $reg = $this->lib->doRegister($reg_request, $reg_response);
             if ($reg)
-                $this->addRegistration($reg);
+                $this->addRegistration($user, $reg);
+            return ($reg !== null);
+            
         }
     }
 
-    public function authenticate($auth_request = null, $auth_response = null) {
+    public function authenticate($user, $auth_request = null, $auth_response = null) {
         if (!$auth_request) {
-            return $this->lib->getAuthenticateData($this->registrations());
+            return $this->lib->getAuthenticateData($this->registrations($user));
         } else {
-            $reg = $this->lib->doAuthenticate($auth_request, $this->registrations(), $auth_response);
+            $reg = $this->lib->doAuthenticate($auth_request, $this->registrations($user), $auth_response);
             if ($reg)
-                $this->addRegistration($reg);
+                $this->addRegistration($user, $reg);
+            return ($reg !== null);
         }
     }
 }

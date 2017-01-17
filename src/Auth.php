@@ -7,6 +7,7 @@ class Auth {
     public $token;
     public $access;
     public $u2f;
+    public $session;
 
     public function __construct(&$config) {
         $this->config =& $config;
@@ -14,33 +15,16 @@ class Auth {
         $this->token = new Token($config);
         $this->access = new Access($config);
         $this->u2f = new U2f($config);
+        $this->session = new Session($config);
 
-        if (session_status() == PHP_SESSION_NONE)
-            session_start();
+        $this->session->start($this->token->get());
     }
 
     public function current_user() {
-        $token = $this->token->get();
-        if (!$token)
+        if ($this->session->validated())
+            return $this->users->get($this->session->username());
+        else
             return null;
-
-        return $this->users->get_by_token($token);
     }
-
-    public function login($name, $pass) {
-        $user = $this->users->get($name);
-        $token = $this->token->new();
-        if ($this->users->validate($user, $pass, $token)) {
-            return $user;
-        } else {
-            return null;
-        }
-    }
-
-    public function logout() {
-        $this->token->clear();
-        unset($_SESSION["user"]);
-    }
-
 }
 

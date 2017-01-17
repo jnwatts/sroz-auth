@@ -9,30 +9,18 @@ class Users {
         $this->config =& $config;
     }
 
-    public function get($name) {
+    public function get($username) {
         foreach ($this->config['users'] as $user) {
-            if ($user["name"] == $name) {
+            if ($user["name"] == $username) {
                 return new User($user);
+                break;
             }
         }
         return null;
     }
 
-    public function get_by_token($token) {
-        if ($token && isset($_SESSION["user"])) {
-            return $this->get($_SESSION["user"]);
-        }
-        return null;
-    }
-
-    public function validate($user, $pass, $token) {
-        if ($user) {
-            $valid = APR1_MD5::check($pass, $user->hash);
-            if ($valid)
-                $_SESSION["user"] = $user->name;
-            return $valid;
-        }
-        return false;
+    public function login($username, $password) {
+        return APR1_MD5::check($password, $this->config['hashes'][$username]);
     }
 }
 

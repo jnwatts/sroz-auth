@@ -4,227 +4,116 @@ require __BASE_DIR__ . '/vendor/autoload.php';
 
 $config = json_decode(file_get_contents(__DIR__ . '/config.json'), true);
 $auth = new Auth\Auth($config);
-$msg = "";
-
 if (defined("__AUTH_INCLUDE__")) {
     // We've been included by another script
     return $auth;
 }
 
-if (isset($_REQUEST["logout"]))
-    $auth->logout();
-
-$user = $auth->current_user();
-if (!$user && isset($_REQUEST["user"]) && isset($_REQUEST["pass"]))
-    $user = $auth->login($_REQUEST["user"], $_REQUEST["pass"]);
-
+$session =& $auth->session;
+$token =& $auth->token;
+$users =& $auth->users;
+$u2f =& $auth->u2f;
+$user = null;
 $redirect = isset($_REQUEST["redirect"]) ? $_REQUEST["redirect"] : "";
-$uri = isset($_SERVER["HTTP_X_ORIGINAL_URI"]) ? $_SERVER["HTTP_X_ORIGINAL_URI"] : $redirect;
-$check = isset($_REQUEST["check"]);
-$valid = $auth->access->validate($user, $uri);
+$msg = "";
+$js_env = [
+    "auth.api" => $u2f->api()
+];
+if ($redirect)
+    $js_env["auth.redirect"] = $redirect;
 
-if (!$valid) {
-    if ($user) {
-        http_response_code(403);
-        $msg = "Not authorized";
-    } else {
-        http_response_code(401);
-        $msg = "Authentication required";
+if (isset($_REQUEST["logout"])) {
+    $session->clear();
+    if ($redirect) {
+        header("Location: " . $redirect, TRUE, 302);
+        exit;
+    }
+    $session->start($token->new());
+}
+
+if (!$session->username()) {
+    if (isset($_REQUEST["username"])) {
+        $session->username($_REQUEST["username"]);
     }
 }
-header("Cache-Control: no-cache, must-revalidate"); // HTTP/1.1
-header("Expires: Sat, 26 Jul 1997 05:00:00 GMT"); // Date in the past
-if ($check) exit;
-if ($valid && $redirect) {
-    http_response_code(302);
-    header("Location: https://".$_SERVER['HTTP_HOST'].$redirect);
+
+if (!$session->validated_password()) {
+    if (isset($_REQUEST["password"])) {
+        if ($users->login($session->username(), $_REQUEST["password"])) {
+            $session->validated_password(true);
+        }
+    }
+}
+
+if (!$session->validated_password()) {
+    include(__BASE_DIR__ . "/views/header.php");
+    include(__BASE_DIR__ . "/views/login.php");
+    include(__BASE_DIR__ . "/views/footer.php");
     exit;
 }
 
-if ($user && isset($_REQUEST["u2f"])) {
-    $u2f = $_REQUEST["u2f"];
+$user = $users->get($session->username());
+
+$js_env["auth.key_handles"] = $u2f->keyHandles($user);
+$u2f_reg_count = $u2f->validRegistrationCount($user);
+
+if (isset($_REQUEST["u2f"])) {
     try {
-        switch ($u2f) {
-            case "register":
-                $data = $auth->u2f->register();
-                echo json_encode($data);
-                break;
-            case "register2":
+        $action = $_REQUEST["u2f"];
+        $data = null;
+        if ($action == "authenticate") {
+            $data = $u2f->authenticate($user);
+        } else if ($action == "authenticate2") {
+            $req = isset($_REQUEST['auth']) ? json_decode($_REQUEST['auth']) : null;
+            $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
+            $result = $u2f->authenticate($user, [$req], $response);
+            if ($result)
+                $session->validated_u2f(true);
+            $data = $u2f->keyHandles($user);
+        } else if ($session->validated_u2f() || $u2f_reg_count == 0) {
+            if ($action == "register") {
+                $data = $u2f->register($user);
+            } else if ($action == "register2") {
                 $reg = isset($_REQUEST['reg']) ? json_decode($_REQUEST['reg']) : null;
                 $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
-                $auth->u2f->register($reg, $response);
-                echo json_encode($auth->u2f->keyHandles());
-                break;
-            case "unregister":
+                $u2f->register($user, $reg, $response);
+                $data = $u2f->keyHandles($user);
+            } else if ($action == "unregister") {
                 $key = isset($_REQUEST['key']) ? $_REQUEST['key'] : null;
                 if ($key)
-                    $auth->u2f->removeRegistration($key);
-                echo json_encode($auth->u2f->keyHandles());
-                break;
-            case "authenticate":
-                $data = $auth->u2f->authenticate();
-                echo json_encode($data);
-                break;
-            case "authenticate2":
-                $req = isset($_REQUEST['auth']) ? json_decode($_REQUEST['auth']) : null;
-                $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
-                $auth->u2f->authenticate([$req], $response);
-                echo json_encode($auth->u2f->keyHandles());
-                break;
-            default:
-                echo "Invalid operation";
-                http_response_code(500);
-                break;
+                    $u2f->removeRegistration($user, $key);
+                $data = $u2f->keyHandles($user);
+            }
+        }
+        if ($data === null) {
+            http_response_code(400);
+            $data = ["errorCode" => 400, "errorMsg" => "Bad request"];
         }
     } catch (Error $e) {
-        echo $e;
+        http_response_code(500);
+        $data = ["errorCode" => $e->getCode(), "errorMsg" => $e->getMessage(), "stackTrace" => $e->getTrace()];
+    } catch (Exception $e) {
         http_response_code(400);
+        $data = ["errorCode" => $e->getCode(), "errorMsg" => $e->getMessage(), "stackTrace" => $e->getTrace()];
     }
+    echo json_encode($data);
+    exit;
+} else if ($u2f_reg_count > 0 && !$session->validated_u2f()) {
+    include(__BASE_DIR__ . "/views/header.php");
+    include(__BASE_DIR__ . "/views/u2f_auth.php");
+    include(__BASE_DIR__ . "/views/footer.php");
+    exit;
+} else {
+    $session->validated_u2f(true);
+}
+
+
+if ($redirect) {
+    header("Location: " . $redirect, TRUE, 302);
     exit;
 }
 
-?>
-<html>
-<head>
-    <script src="auth.js"></script>
-    <script>
-        $(function() {
-            window.auth = {
-                uri: "<?=$_SERVER["PHP_SELF"]?>",
-                register: function() {
-                    $.ajax({
-                        type: "POST",
-                        url: auth.uri,
-                        data: {u2f: "register"},
-                        dataType: "json"
-                    }).done(auth.register_callback);
-                },
-                register_callback: function(data) {
-                    console.log("Register request", data);
-                    auth.msg("Press U2F button now...");
-                    var request = data.reg;
-                    var appId = request.appId;
-                    var registerRequests = [{version: request.version, challenge: request.challenge}];
-                    u2f.register(appId, registerRequests, data.sign, function(data) {
-                        console.log("Register callback", data);
-                        auth.msg("Registering...");
-                        $.ajax({
-                            type: "POST",
-                            url: auth.uri,
-                            data: {u2f: "register2", reg: JSON.stringify(request), response: JSON.stringify(data)},
-                            dataType: "json"
-                        }).done(auth.register2_callback);
-                    });
-                },
-                register2_callback: function(data) {
-                    console.log("Register2 callback", data);
-                    auth.msg("");
-                    auth.update_keys(data);
-                },
-                unregister: function(keyHandle) {
-                    $.ajax({
-                        type: "POST",
-                        url: auth.uri,
-                        data: {u2f: "unregister", key: keyHandle},
-                        dataType: "json"
-                    }).done(auth.update_keys);
-                },
-                update_keys: function(keyHandles) {
-                    if (keyHandles)
-                        auth.key_handles = keyHandles;
-                    var keys = $('#key_handles');
-                    keys.html("");
-                    auth.key_handles.forEach(function (keyHandle, i) {
-                        var k = $("<input type=\"button\">");
-                        k.prop("value", "Unregister #" + i);
-                        k.on('click', function() {
-                            auth.unregister(keyHandle);
-                        });
-                        keys.append(k);
-                    });
-                },
-                authenticate: function() {
-                    $.ajax({
-                        type: "POST",
-                        url: auth.uri,
-                        data: {u2f: "authenticate"},
-                        dataType: "json"
-                    }).done(auth.authenticate_callback);
-                },
-                authenticate_callback: function(data) {
-                    console.log("Auth request", data);
-                    auth.msg("Press U2F button now...");
-                    var request = data[0];
-                    var appId = request.appId;
-                    var challenge = request.challenge;
-                    var registeredKeys = [{version: request.version, keyHandle: request.keyHandle}];
-                    u2f.sign(appId, challenge, registeredKeys, function(data) {
-                        console.log("Auth callback", data);
-                        if (data.errorCode) {
-                            auth.msg("Failed to sign: " + data.errorCode);
-                            return false;
-                        }
-                        auth.msg("Authenticating...");
-                        $.ajax({
-                            type: "POST",
-                            url: auth.uri,
-                            data: {u2f: "authenticate2", auth: JSON.stringify(request), response: JSON.stringify(data)},
-                            dataType: "json"
-                        }).done(auth.authenticate_callback2);
-                    });
-                },
-                authenticate_callback2: function(data) {
-                    console.log("Register2 callback", data);
-                    auth.msg("");
-                    auth.update_keys(data);
-                },
-                msg: function(str) {
-                    $('#msg').html(str);
-                },
-                key_handles: <?=json_encode($auth->u2f->keyHandles())?>,
-            };
-
-            $('#register').on('click', function() {
-                auth.register();
-            });
-
-            $('#authenticate').on('click', function() {
-                auth.authenticate();
-            });
-
-            auth.update_keys(auth.key_handles);
-        });
-    </script>
-</head>
-<body>
-<?if (http_response_code() != 200) {?>
-<h1>Error <?=http_response_code()?></h1>
-<?}?>
-<div id="msg"><?=$msg?></div>
-<?if ($user) {?>
-<h2>TODO:</h2>
-<ul>
-<li>u2f</li>
-<li>Remove reliance on session</li>
-</ul>
-<div>
-<div>
-    <div id="key_handles">
-    </div>
-    <input id="register" value="Register U2F" type="button">
-    <input id="authenticate" value="authenticate U2F" type="button">
-</div>
-<form method="post" action="<?=$_SERVER["PHP_SELF"]?>">
-<input name="logout" value="Logout" type="submit">
-</form>
-</div>
-<?} else {?>
-<form method="post" action="<?=$_SERVER["PHP_SELF"]?>">
-<input name="redirect" type="hidden" value="<?=$redirect?>">
-<input name="user" type="text" value="<?=$user?>"><br>
-<input name="pass" type="password"><br>
-<input type="submit">
-</form>
-<?}?>
-</body>
-</html>
+include(__BASE_DIR__ . "/views/header.php");
+include(__BASE_DIR__ . "/views/user_info.php");
+include(__BASE_DIR__ . "/views/footer.php");
+exit;
