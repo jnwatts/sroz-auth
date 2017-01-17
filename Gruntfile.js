@@ -7,7 +7,7 @@ module.exports = function(grunt) {
         separator: ';'
       },
       dist: {
-        src: ['src/**/*.js', 'node_modules/jquery/dist/jquery.js', 'node_modules/u2f-api-polyfill/u2f-api-polyfill.js'],
+        src: ['node_modules/jquery/dist/jquery.js', 'node_modules/u2f-api-polyfill/u2f-api-polyfill.js', 'src/**/*.js'],
         dest: 'dist/<%= pkg.name %>.js'
       }
     },
