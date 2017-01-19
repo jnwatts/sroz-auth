@@ -1,10 +1,23 @@
 {
 	"acl": [
-		{ "path": "/secure", "valid_users": ["test"] },
+		{ "path": "/secure", "valid_users": ["test"] }
 	],
 	"users": [
-		{ "name": "test", "pass": "$apr1$x2SDulpA$T0KDX5AKRtI1hOMJc4z2q/" },
+		{ "name": "test" }
 	],
-	"site": "example.com",
-	"path": "/app"
+    "hashes": {
+        "test": "$apr1$x2SDulpA$T0KDX5AKRtI1hOMJc4z2q/"
+    },
+    "token": {
+        "name": "token",
+        "domain": "example.com",
+        "path": "/",
+        "lifetime": 2.592e+6
+    },
+    "u2f": {
+        "appId": "https://home.sroz.net"
+    },
+    "db": {
+        "url": "sqlite:///auth.db"
+    }
 }
