@@ -2,7 +2,7 @@
 <h1><a href="/">Home</a> / Auth</h1>
 <h2>TODO:</h2>
 <ul>
-<li>Remove reliance on session</li>
+    <li>Move users+access to DB (config file should only be token/path/db params)</li>
 </ul>
 <h2>Username: <?=$user->name?></h2>
 <h2>U2F Keys</h2>

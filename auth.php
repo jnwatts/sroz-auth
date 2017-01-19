@@ -10,7 +10,6 @@ if (defined("__AUTH_INCLUDE__")) {
 }
 
 $session =& $auth->session;
-$token =& $auth->token;
 $users =& $auth->users;
 $u2f =& $auth->u2f;
 $user = null;
@@ -28,7 +27,7 @@ if (isset($_REQUEST["logout"])) {
         header("Location: " . $redirect, TRUE, 302);
         exit;
     }
-    $session->start($token->new());
+    $session->start();
 }
 
 if (!$session->username()) {
@@ -45,19 +44,19 @@ if (!$session->validated_password()) {
     }
 }
 
-if (!$session->validated_password()) {
-    include(__BASE_DIR__ . "/views/header.php");
-    include(__BASE_DIR__ . "/views/login.php");
-    include(__BASE_DIR__ . "/views/footer.php");
-    exit;
-}
-
 $user = $users->get($session->username());
 
-$js_env["auth.key_handles"] = $u2f->keyHandles($user);
-$u2f_reg_count = $u2f->validRegistrationCount($user);
+if ($user) {
+    $js_env["auth.key_handles"] = $u2f->keyHandles($user);
+    $u2f_reg_count = $u2f->validRegistrationCount($user);
+}
 
 if (isset($_REQUEST["u2f"])) {
+    if (!$user || !$session->validated_password()) {
+        http_response_code(401);
+        $data = ["errorCode" => 401, "errorMsg" => "Authentication required"];
+        exit;
+    }
     try {
         $action = $_REQUEST["u2f"];
         $data = null;
@@ -98,6 +97,13 @@ if (isset($_REQUEST["u2f"])) {
     }
     echo json_encode($data);
     exit;
+}
+
+if (!$session->validated_password()) {
+    include(__BASE_DIR__ . "/views/header.php");
+    include(__BASE_DIR__ . "/views/login.php");
+    include(__BASE_DIR__ . "/views/footer.php");
+    exit;
 } else if ($u2f_reg_count > 0 && !$session->validated_u2f()) {
     include(__BASE_DIR__ . "/views/header.php");
     include(__BASE_DIR__ . "/views/u2f_auth.php");
@@ -106,7 +112,6 @@ if (isset($_REQUEST["u2f"])) {
 } else {
     $session->validated_u2f(true);
 }
-
 
 if ($redirect) {
     header("Location: " . $redirect, TRUE, 302);
