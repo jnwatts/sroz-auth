@@ -84,6 +84,7 @@ class U2f implements iDbObject {
             foreach ($this->key_params as $param) {
                 $query->set($param, $query->createNamedParameter($new_reg->$param));
             }
+            DbHelper::updateLastModified($query);
             $query->where("keyHandle = ".$query->createNamedParameter($new_reg->keyHandle) . 
                 " AND username = ".$query->createNamedParameter($user->name));
         } else {
@@ -92,6 +93,7 @@ class U2f implements iDbObject {
             foreach ($this->key_params as $param) {
                 $query->setValue($param, $query->createNamedParameter($new_reg->$param));
             }
+            DbHelper::initLastModified($query);
         }
         $query->execute();
     }
@@ -135,7 +137,7 @@ class U2f implements iDbObject {
     }
 
     public function db_version() {
-        return 0;
+        return 1;
     }
 
     public function db_create(\Doctrine\DBAL\Schema\Schema $schema) {
@@ -147,7 +149,7 @@ class U2f implements iDbObject {
         $t->addColumn("publicKey", "text");
         $t->addColumn("certificate", "text");
         $t->addColumn("counter", "integer");
-        //TODO: Add last modified column
+        $t->addColumn("lastModified", "date");
         //TODO: Add failure count?
         $t->setPrimaryKey(["username"]);
         $t->addUniqueIndex(["keyHandle"]);
