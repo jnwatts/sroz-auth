@@ -30,9 +30,16 @@ if (isset($_REQUEST["logout"])) {
     $session->start();
 }
 
+if ($session->username() && $session->ip_address()) {
+    if ($session->ip_address() != $_SERVER['REMOTE_ADDR']) {
+        $session->clear();
+    }
+}
+
 if (!$session->username()) {
     if (isset($_REQUEST["username"])) {
         $session->username($_REQUEST["username"]);
+        $session->ip_address($_SERVER['REMOTE_ADDR']);
     }
 }
 
