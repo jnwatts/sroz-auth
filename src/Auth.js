@@ -1,7 +1,6 @@
 $(function() {
     window.auth = {
         uri: "",
-        reload: false,
         redirect: "",
         register: function() {
             auth.msg("Registering...");
@@ -100,8 +99,6 @@ $(function() {
             auth.update_keys(data);
             if (auth.redirect) {
                 location.href = auth.redirect;
-            } else if (auth.reload) {
-                location.reload();
             }
         },
         msg: function(str) {
