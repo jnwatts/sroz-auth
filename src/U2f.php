@@ -138,8 +138,8 @@ class U2f implements iDbObject {
         return 0;
     }
 
-    public function db_upgrade(\Doctrine\DBAL\Schema\Schema $fromSchema, \Doctrine\DBAL\Schema\Schema $toSchema) {
-        $t = $toSchema->createTable($this->db_table());
+    public function db_create(\Doctrine\DBAL\Schema\Schema $schema) {
+        $t = $schema->createTable($this->db_table());
         //TODO: Change username to user_id
         //TODO: Add foreign key to users table
         $t->addColumn("username", "string", ["length" => 32]);

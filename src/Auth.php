@@ -40,16 +40,7 @@ class Auth {
         //TODO: Table prefixes
 
         if (!$sm->tablesExist([$this->schema_version_table])) {
-            $fromSchema = $sm->createSchema();
-            $toSchema = clone $fromSchema;
-
-            $table = $toSchema->createTable($this->schema_version_table);
-            $table->addColumn("name", "string", ["length" => 32]);
-            $table->addColumn("version", "integer", ["unsigned" => true]);
-            $table->setPrimaryKey(["name"]);
-            $table->addUniqueIndex(["name"]);
-
-            $this->upgrade_schema($fromSchema, $toSchema, $db_objects);
+            $this->upgrade_schema($db_objects);
         } else {
             $query = $db->createQueryBuilder();
             $query->select("name", "version")->from($this->schema_version_table);
@@ -67,18 +58,26 @@ class Auth {
                 }
             }
             if (count($updated_db_objects) > 0) {
-                $fromSchema = $sm->createSchema();
-                $toSchema = $sm->createSchema();
-                $this->upgrade_schema($fromSchema, $toSchema, $updated_db_objects);
+                $this->upgrade_schema($updated_db_objects);
             }
         }
     }
 
-    private function upgrade_schema($fromSchema, $toSchema, $db_objects) {
+    private function upgrade_schema($db_objects) {
         $db = $this->db;
+        $sm = $db->getSchemaManager();
+        $fromSchema = $sm->createSchema();
+        $toSchema = new \Doctrine\DBAL\Schema\Schema();
+
+        $table = $toSchema->createTable($this->schema_version_table);
+        $table->addColumn("name", "string", ["length" => 32]);
+        $table->addColumn("version", "integer", ["unsigned" => true]);
+        $table->setPrimaryKey(["name"]);
+        $table->addUniqueIndex(["name"]);
         foreach ($db_objects as $dbo) {
-            $dbo->db_upgrade($fromSchema, $toSchema);
+            $dbo->db_create($toSchema);
         }
+
         $comparator = new \Doctrine\DBAL\Schema\Comparator();
         $schemaDiff = $comparator->compare($fromSchema, $toSchema);
         $queries = $schemaDiff->toSql($db->getDatabasePlatform());
