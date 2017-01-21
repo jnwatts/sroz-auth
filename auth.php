@@ -28,6 +28,10 @@ if (isset($_REQUEST["logout"])) {
         exit;
     }
     $session->start();
+} else if (isset($_REQUEST["logout_password"])) {
+    $session->validated_password(false);
+} else if (isset($_REQUEST["logout_u2f"])) {
+    $session->validated_u2f(false);
 }
 
 if ($session->username() && $session->ip_address()) {

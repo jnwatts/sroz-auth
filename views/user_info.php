@@ -11,4 +11,8 @@
     <input id="register" value="Register U2F" type="button"><br>
     <input id="authenticate" value="Authenticate U2F" type="button"><br>
 </p>
-<form method="post" action="<?=$_SERVER["PHP_SELF"]?>"> <input name="logout" value="Logout" type="submit"> </form>
+<form method="post" action="<?=$_SERVER["PHP_SELF"]?>">
+<input name="logout" value="Forget everything" type="submit">
+<input name="logout_password" value="Forget password" type="submit">
+<input name="logout_u2f" value="Forget U2F" type="submit">
+</form>
