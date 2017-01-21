@@ -1,1 +1,1 @@
-<script>$(function() { auth.reload = true; auth.authenticate(); });</script>
+<script>$(function() { auth.redirect = "<?=$_SERVER["PHP_SELF"]?>"; auth.authenticate(); });</script>
