@@ -13,6 +13,7 @@ class Session implements iDbObject {
             "username",
             "validated_password",
             "validated_u2f",
+            "ip_address",
         ];
         $this->db = $config["db"]["connection"];
     }
@@ -36,10 +37,11 @@ class Session implements iDbObject {
     private function read() {
         $db = $this->db;
         $query = $db->createQueryBuilder();
-        $query->select("username", "validated_password", "validated_u2f")
+        $query->select($this->params)
             ->from($this->db_table())
-            ->where("token = ?")->setParameter(0, $this->token);
-
+            ->where("token = "
+                . $query->createNamedParameter($this->token)
+                . " AND lastModified > CURRENT_TIMESTAMP - " . $query->createNamedParameter($this->config["token"]["lifetime"]));
         $result = $query->execute();
         return $result->fetch(\PDO::FETCH_OBJ);
     }
@@ -74,6 +76,7 @@ class Session implements iDbObject {
             foreach ($params as $p) {
                 $query->set($db->quoteIdentifier($p), $query->createNamedParameter($this->data->$p));
             }
+            DbHelper::updateLastModified($query);
             $query->where($db->quoteIdentifier("token") . " = " . $query->createNamedParameter($this->token));
         } else {
             $this->token = $this->uuidv4();
@@ -85,6 +88,7 @@ class Session implements iDbObject {
             foreach ($params as $p) {
                 $query->setValue($db->quoteIdentifier($p), $query->createNamedParameter($this->data->$p));
             }
+            DbHelper::initLastModified($query);
         }
         try {
             $query->execute();
@@ -120,6 +124,10 @@ class Session implements iDbObject {
         return $this->validated_password() && $this->validated_u2f();
     }
 
+    public function ip_address($val = null) {
+        return $this->param("ip_address", $val);
+    }
+
     public function dump() {
         return $this->data;
     }
@@ -129,7 +137,7 @@ class Session implements iDbObject {
     }
 
     public function db_version() {
-        return 0;
+        return 1;
     }
 
     public function db_create(\Doctrine\DBAL\Schema\Schema $schema) {
@@ -140,6 +148,8 @@ class Session implements iDbObject {
         $t->addColumn("username", "string", ["length" => 32, "notnull" => false]);
         $t->addColumn("validated_password", "boolean", ["default" => false]);
         $t->addColumn("validated_u2f", "boolean", ["default" => false]);
+        $t->addColumn("ip_address", "string", ["notnull" => false]);
+        $t->addColumn("lastModified", "date");
         //TODO: Add last modified column
         $t->setPrimaryKey(["token"]);
     }
