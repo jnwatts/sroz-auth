@@ -4,7 +4,8 @@
     "require": {
         "yubico/u2flib-server": "^1.0",
         "whitehat101/apr1-md5": "^1.0",
-        "doctrine/dbal": "^2.5"
+        "doctrine/dbal": "^2.5",
+        "robmorgan/phinx": "^0.6.5"
     },
     "license": "BSD",
     "authors": [

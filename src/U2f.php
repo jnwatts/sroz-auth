@@ -5,18 +5,66 @@ class U2f implements iDbObject {
     private $config;
     private $lib;
     private $db;
-    private $key_params;
+
+    private static $param_map = [
+        "key_handle" => "keyHandle",
+        "public_key" => "publicKey",
+        "certificate" => "certificate",
+        "counter" => "counter",
+    ];
 
     public function __construct(&$config) {
         $this->config =& $config;
         $this->db = $config["db"]["connection"];
         $this->lib = new \u2flib_server\U2F($this->api());
-
-        $this->key_params = ["keyHandle", "publicKey", "certificate", "counter"];
     }
 
     public function api() {
         return $this->config["u2f"]["appId"];
+    }
+
+    private static function fromDb($arg) {
+        $_fromDb = function ($reg) {
+            foreach (U2f::$param_map as $db => $obj) {
+                if (isset($reg->$db) && $db != $obj) {
+                    $reg->$obj = $reg->$db;
+                    unset($reg->$db);
+                }
+            }
+            return $reg;
+        };
+        if (!$arg)
+            return $arg;
+        if (is_array($arg)) {
+            foreach ($arg as &$reg) {
+                $reg = $_fromDb($reg);
+            }
+        } else {
+            $arg = $_fromDb($arg);
+        }
+        return $arg;
+    }
+
+    private static function toDb($arg) {
+        $_fromDb = function ($reg) {
+            foreach (U2f::$param_map as $db => $obj) {
+                if (isset($reg->$obj) && $db != $obj) {
+                    $reg->$db = $reg->$obj;
+                    unset($reg->$obj);
+                }
+            }
+            return $reg;
+        };
+        if (!$arg)
+            return $arg;
+        if (is_array($arg)) {
+            foreach ($arg as &$reg) {
+                $reg = $_toDb($reg);
+            }
+        } else {
+            $arg = $_toDb($arg);
+        }
+        return $arg;
     }
 
     public function validRegistrationCount($user) {
@@ -35,7 +83,7 @@ class U2f implements iDbObject {
         $db = $this->db;
 
         $query = $db->createQueryBuilder();
-        $query->select("keyHandle")
+        $query->select("key_handle as keyHandle")
             ->from($this->db_table())
             ->where("username = " . $query->createNamedParameter($user->name));
 
@@ -50,28 +98,32 @@ class U2f implements iDbObject {
         $db = $this->db;
 
         $query = $db->createQueryBuilder();
-        $query->select($this->key_params)
+        $query->select(array_keys(U2f::$param_map))
             ->from($this->db_table())
-            ->where("keyHandle = ".$query->createNamedParameter($keyHandle)." AND username = ".$query->createNamedParameter($user->name));
+            ->where("key_handle = ".$query->createNamedParameter($keyHandle)." AND username = ".$query->createNamedParameter($user->name));
 
         $result = $query->execute();
+        $result->setFetchMode(\PDO::FETCH_OBJ);
 
-        return $result->fetch(\PDO::FETCH_OBJ);
+        $reg = U2f::fromDb($result->fetch());
+
+        return $reg;
     }
 
     public function getRegistrations($user) {
         $db = $this->db;
 
         $query = $db->createQueryBuilder();
-        $query->select($this->key_params)
+        $query->select(array_keys(U2f::$param_map))
             ->from($this->db_table())
             ->where("username = ".$query->createNamedParameter($user->name));
 
         $result = $query->execute();
+        $result->setFetchMode(\PDO::FETCH_OBJ);
 
-        $reg = $result->fetchAll(\PDO::FETCH_OBJ);
+        $regs = U2f::fromDb($result->fetchAll());
 
-        return $reg;
+        return $regs;
     }
 
     public function addRegistration($user, $new_reg) {
@@ -81,19 +133,21 @@ class U2f implements iDbObject {
         $reg = $this->getRegistration($user, $new_reg->keyHandle);
         if ($reg) {
             $query->update($this->db_table());
-            foreach ($this->key_params as $param) {
-                $query->set($param, $query->createNamedParameter($new_reg->$param));
+            foreach (U2f::$param_map as $db => $obj) {
+                if (isset($new_reg->$obj))
+                    $query->set($db, $query->createNamedParameter($new_reg->$obj));
             }
-            DbHelper::updateLastModified($query);
-            $query->where("keyHandle = ".$query->createNamedParameter($new_reg->keyHandle) . 
+            DbHelper::updateTimestamp($query);
+            $query->where("key_handle = ".$query->createNamedParameter($new_reg->keyHandle) .
                 " AND username = ".$query->createNamedParameter($user->name));
         } else {
             $query->insert($this->db_table());
             $query->setValue("username", $query->createNamedParameter($user->name));
-            foreach ($this->key_params as $param) {
-                $query->setValue($param, $query->createNamedParameter($new_reg->$param));
+            foreach (U2f::$param_map as $db => $obj) {
+                if (isset($new_reg->$obj))
+                    $query->setValue($db, $query->createNamedParameter($new_reg->$obj));
             }
-            DbHelper::initLastModified($query);
+            DbHelper::initTimestamp($query);
         }
         $query->execute();
     }
@@ -102,9 +156,9 @@ class U2f implements iDbObject {
         $db = $this->db;
 
         $query = $db->createQueryBuilder();
-        $query->delete($this->db_table)
-            ->where("keyHandle = ".$query->createNamedParameter($keyHandle) . 
-                " AND username = ".$query->createPositionalParameter($user->name));
+        $query->delete($this->db_table())
+            ->where("key_handle = ".$query->createNamedParameter($keyHandle) .
+                " AND username = ".$query->createNamedParameter($user->name));
         $query->execute();
     }
 
@@ -133,25 +187,6 @@ class U2f implements iDbObject {
     }
 
     public function db_table() {
-        return "SROZ_U2f";
-    }
-
-    public function db_version() {
-        return 1;
-    }
-
-    public function db_create(\Doctrine\DBAL\Schema\Schema $schema) {
-        $t = $schema->createTable($this->db_table());
-        //TODO: Change username to user_id
-        //TODO: Add foreign key to users table
-        $t->addColumn("username", "string", ["length" => 32]);
-        $t->addColumn("keyHandle", "text");
-        $t->addColumn("publicKey", "text");
-        $t->addColumn("certificate", "text");
-        $t->addColumn("counter", "integer");
-        $t->addColumn("lastModified", "date");
-        //TODO: Add failure count?
-        $t->setPrimaryKey(["username"]);
-        $t->addUniqueIndex(["keyHandle"]);
+        return "u2f";
     }
 }

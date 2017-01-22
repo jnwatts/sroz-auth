@@ -41,7 +41,7 @@ class Session implements iDbObject {
             ->from($this->db_table())
             ->where("token = "
                 . $query->createNamedParameter($this->token)
-                . " AND lastModified > CURRENT_TIMESTAMP - " . $query->createNamedParameter($this->config["token"]["lifetime"]));
+                . " AND " . DbHelper::whereTimestampWithin($query, $this->config["token"]["lifetime"]));
         $result = $query->execute();
         return $result->fetch(\PDO::FETCH_OBJ);
     }
@@ -76,7 +76,7 @@ class Session implements iDbObject {
             foreach ($params as $p) {
                 $query->set($db->quoteIdentifier($p), $query->createNamedParameter($this->data->$p));
             }
-            DbHelper::updateLastModified($query);
+            DbHelper::updateTimestamp($query);
             $query->where($db->quoteIdentifier("token") . " = " . $query->createNamedParameter($this->token));
         } else {
             $this->token = $this->uuidv4();
@@ -88,7 +88,7 @@ class Session implements iDbObject {
             foreach ($params as $p) {
                 $query->setValue($db->quoteIdentifier($p), $query->createNamedParameter($this->data->$p));
             }
-            DbHelper::initLastModified($query);
+            DbHelper::initTimestamp($query);
         }
         try {
             $query->execute();
@@ -133,25 +133,7 @@ class Session implements iDbObject {
     }
 
     public function db_table() {
-        return "SROZ_Session";
-    }
-
-    public function db_version() {
-        return 1;
-    }
-
-    public function db_create(\Doctrine\DBAL\Schema\Schema $schema) {
-        $t = $schema->createTable($this->db_table());
-        $t->addColumn("token", "string", ["length" => strlen("xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx")]);
-        //TODO: Change username to user_id
-        //TODO: Add foreign key to users table
-        $t->addColumn("username", "string", ["length" => 32, "notnull" => false]);
-        $t->addColumn("validated_password", "boolean", ["default" => false]);
-        $t->addColumn("validated_u2f", "boolean", ["default" => false]);
-        $t->addColumn("ip_address", "string", ["notnull" => false]);
-        $t->addColumn("lastModified", "date");
-        //TODO: Add last modified column
-        $t->setPrimaryKey(["token"]);
+        return "session";
     }
 
 	/**

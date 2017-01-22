@@ -18,6 +18,7 @@
         "appId": "https://home.sroz.net"
     },
     "db": {
+        "name": "auth",
         "url": "sqlite:///auth.db"
     }
 }
