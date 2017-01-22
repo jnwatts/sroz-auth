@@ -10975,7 +10975,6 @@ return jQuery;
 ;$(function() {
     window.auth = {
         uri: "",
-        reload: false,
         redirect: "",
         register: function() {
             auth.msg("Registering...");
@@ -11018,23 +11017,26 @@ return jQuery;
             $.ajax({
                 type: "POST",
                 url: auth.uri,
-                data: {u2f: "unregister", key: keyHandle},
+                data: {u2f: "unregister", keyHandle: keyHandle},
                 dataType: "json"
             }).done(auth.update_keys);
         },
-        update_keys: function(keyHandles) {
-            if (keyHandles)
-                auth.key_handles = keyHandles;
-            var keys = $('#key_handles');
-            keys.html("");
-            auth.key_handles.forEach(function (keyHandle, i) {
+        update_keys: function(keys) {
+            if (keys)
+                auth.keys = keys;
+            var obj = $('#keys');
+            obj.html("");
+            auth.keys.forEach(function (key, i) {
                 var k = $("<input type=\"button\">");
-                k.prop("value", "Unregister #" + i);
+                if (key.valid)
+                    k.prop("value", "Unregister #" + i);
+                else
+                    k.prop("value", "Unregister #" + i + " (not yet authenticated)");
                 k.on('click', function() {
-                    auth.unregister(keyHandle);
+                    auth.unregister(key.keyHandle);
                 });
-                keys.append(k);
-                keys.append($('<br>'));
+                obj.append(k);
+                obj.append($('<br>'));
             });
         },
         authenticate: function() {
@@ -11074,14 +11076,12 @@ return jQuery;
             auth.update_keys(data);
             if (auth.redirect) {
                 location.href = auth.redirect;
-            } else if (auth.reload) {
-                location.reload();
             }
         },
         msg: function(str) {
             $('#msg').html(str);
         },
-        key_handles: [],
+        keys: [],
     };
 
     $('#register').on('click', function() {
