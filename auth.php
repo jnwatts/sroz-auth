@@ -1,4 +1,5 @@
 <?php
+
 define("__BASE_DIR__", __DIR__);
 require __BASE_DIR__ . '/vendor/autoload.php';
 
@@ -58,7 +59,7 @@ if (!$session->validated_password()) {
 $user = $users->get($session->username());
 
 if ($user) {
-    $js_env["auth.key_handles"] = $u2f->keyHandles($user);
+    $js_env["auth.keys"] = $u2f->keys($user);
     $u2f_reg_count = $u2f->validRegistrationCount($user);
 }
 
@@ -79,7 +80,7 @@ if (isset($_REQUEST["u2f"])) {
             $result = $u2f->authenticate($user, [$req], $response);
             if ($result)
                 $session->validated_u2f(true);
-            $data = $u2f->keyHandles($user);
+            $data = $u2f->keys($user);
         } else if ($session->validated_u2f() || $u2f_reg_count == 0) {
             if ($action == "register") {
                 $data = $u2f->register($user);
@@ -87,12 +88,12 @@ if (isset($_REQUEST["u2f"])) {
                 $reg = isset($_REQUEST['reg']) ? json_decode($_REQUEST['reg']) : null;
                 $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
                 $u2f->register($user, $reg, $response);
-                $data = $u2f->keyHandles($user);
+                $data = $u2f->keys($user);
             } else if ($action == "unregister") {
-                $key = isset($_REQUEST['key']) ? $_REQUEST['key'] : null;
-                if ($key)
-                    $u2f->removeRegistration($user, $key);
-                $data = $u2f->keyHandles($user);
+                $keyHandle = isset($_REQUEST['keyHandle']) ? $_REQUEST['keyHandle'] : null;
+                if ($keyHandle)
+                    $u2f->removeRegistration($user, $keyHandle);
+                $data = $u2f->keys($user);
             }
         }
         if ($data === null) {

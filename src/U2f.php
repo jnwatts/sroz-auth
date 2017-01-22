@@ -78,20 +78,24 @@ class U2f implements iDbObject {
         return $query->execute()->fetchColumn(0);
     }
 
-    public function keyHandles($user) {
-        $keyHandles = [];
+    public function keys($user) {
+        $keys = [];
         $db = $this->db;
 
         $query = $db->createQueryBuilder();
-        $query->select("key_handle as keyHandle")
+        $query->select("key_handle as keyHandle", "counter > 0 as valid")
             ->from($this->db_table())
             ->where("username = " . $query->createNamedParameter($user->name));
 
         $result = $query->execute();
+        $result->setFetchMode(\PDO::FETCH_OBJ);
         if ($result)
-            $keyHandles = $result->fetchAll();
+            $keys = $result->fetchAll();
 
-        return $keyHandles;
+        foreach ($keys as &$key)
+            $key->valid = (bool)$key->valid;
+
+        return $keys;
     }
 
     public function getRegistration($user, $keyHandle) {
