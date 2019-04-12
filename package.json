@@ -17,5 +17,5 @@
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "Josh Watts <josh@sroz.net>",
-  "license": "BSD"
+  "license": "BSD-3-Clause"
 }
