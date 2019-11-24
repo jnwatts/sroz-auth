@@ -1,136 +1,86 @@
 <?php
+include "APR1_MD5.php";
+$config = json_decode(file_get_contents(__DIR__ . '/../auth.json'), true);
+$debug = false;
 
-define("__BASE_DIR__", __DIR__);
-require __BASE_DIR__ . '/vendor/autoload.php';
+set_exception_handler(function ($e) {
+	error_log($e);
+	die();
+});
 
-$config = json_decode(file_get_contents(__DIR__ . '/config.json'), true);
-$auth = new Auth\Auth($config);
-if (defined("__AUTH_INCLUDE__")) {
-    // We've been included by another script
-    return $auth;
+function debug_log($m) {
+	global $debug;
+	if ($debug) {
+		error_log($m);
+	}
 }
 
-$session =& $auth->session;
-$users =& $auth->users;
-$u2f =& $auth->u2f;
-$user = null;
-$redirect = isset($_REQUEST["redirect"]) ? $_REQUEST["redirect"] : "";
-$msg = "";
-$js_env = [
-    "auth.api" => $u2f->api()
-];
-if ($redirect)
-    $js_env["auth.redirect"] = $redirect;
-
-if (isset($_REQUEST["logout"])) {
-    $session->clear();
-    if ($redirect) {
-        header("Location: " . $redirect, TRUE, 302);
-        exit;
-    }
-    $session->start();
-} else if (isset($_REQUEST["logout_password"])) {
-    $session->validated_password(false);
-} else if (isset($_REQUEST["logout_u2f"])) {
-    $session->validated_u2f(false);
+function auth_required() {
+	global $config;
+	header('WWW-Authenticate: Basic realm="'.$config["realm"].'"');
+	header('HTTP/1.0 401 Unauthorized');
+	echo 'Access denied';
+	exit;
 }
 
-if ($session->username() && $session->ip_address()) {
-    if ($session->ip_address() != $_SERVER['REMOTE_ADDR']) {
-        $session->clear();
-    }
+function validate_user() {
+	global $config;
+	debug_log("Validating user");
+	if (!isset($_SERVER['PHP_AUTH_USER'])) {
+		debug_log("Missing user");
+		return 401;
+	}
+	if (!isset($config['hashes'][$_SERVER['PHP_AUTH_USER']])) {
+		debug_log("User not found");
+		return 401;
+	}
+	if (!APR1_MD5::check($_SERVER['PHP_AUTH_PW'], $config['hashes'][$_SERVER['PHP_AUTH_USER']])) {
+		debug_log("Bad password");
+		return 401;
+	}
+	debug_log("Validated user: ".$_SERVER['PHP_AUTH_USER']);
+	return 200;
 }
 
-if (!$session->username()) {
-    if (isset($_REQUEST["username"])) {
-        $session->username($_REQUEST["username"]);
-        $session->ip_address($_SERVER['REMOTE_ADDR']);
-    }
+function validate_path() {
+	global $config;
+	$uri = isset($_SERVER["REQUEST_URI"]) ? $_SERVER["REQUEST_URI"] : "";
+	debug_log("Validating path: ".$uri);
+	foreach ($config["acl"] as $acl) {
+		if (strpos($uri, $acl["path"]) === 0) {
+			debug_log("Matched ".$acl["path"]);
+			if (!isset($acl["valid_users"])) {
+				# No list of valid_users means ok for anon
+				debug_log("Public access");
+				return 200;
+			}
+			$result = validate_user();
+			if ($result == 200 && !in_array($_SERVER['PHP_AUTH_USER'], $acl["valid_users"])) {
+				debug_log("User not in valid_users");
+				$result = 403;
+			}
+			return $result;
+		}
+	}
+	# Default to no access
+	debug_log("No match");
+	return false;
 }
 
-if (!$session->validated_password()) {
-    if (isset($_REQUEST["password"])) {
-        if ($users->login($session->username(), $_REQUEST["password"])) {
-            $session->validated_password(true);
-        }
-    }
+if (defined('__AUTH_CHECK__')) {
+	return;
 }
-
-$user = $users->get($session->username());
-
-if ($user) {
-    $js_env["auth.keys"] = $u2f->keys($user);
-    $u2f_reg_count = $u2f->validRegistrationCount($user);
+if (isset($_REQUEST['logout'])) {
+	auth_required();
 }
-
-if (isset($_REQUEST["u2f"])) {
-    if (!$user || !$session->validated_password()) {
-        http_response_code(401);
-        $data = ["errorCode" => 401, "errorMsg" => "Authentication required"];
-        exit;
-    }
-    try {
-        $action = $_REQUEST["u2f"];
-        $data = null;
-        if ($action == "authenticate") {
-            $data = $u2f->authenticate($user);
-        } else if ($action == "authenticate2") {
-            $req = isset($_REQUEST['auth']) ? json_decode($_REQUEST['auth']) : null;
-            $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
-            $result = $u2f->authenticate($user, [$req], $response);
-            if ($result)
-                $session->validated_u2f(true);
-            $data = $u2f->keys($user);
-        } else if ($session->validated_u2f() || $u2f_reg_count == 0) {
-            if ($action == "register") {
-                $data = $u2f->register($user);
-            } else if ($action == "register2") {
-                $reg = isset($_REQUEST['reg']) ? json_decode($_REQUEST['reg']) : null;
-                $response = isset($_REQUEST['response']) ? json_decode($_REQUEST['response']) : null;
-                $u2f->register($user, $reg, $response);
-                $data = $u2f->keys($user);
-            } else if ($action == "unregister") {
-                $keyHandle = isset($_REQUEST['keyHandle']) ? $_REQUEST['keyHandle'] : null;
-                if ($keyHandle)
-                    $u2f->removeRegistration($user, $keyHandle);
-                $data = $u2f->keys($user);
-            }
-        }
-        if ($data === null) {
-            http_response_code(400);
-            $data = ["errorCode" => 400, "errorMsg" => "Bad request"];
-        }
-    } catch (Error $e) {
-        http_response_code(500);
-        $data = ["errorCode" => $e->getCode(), "errorMsg" => $e->getMessage(), "stackTrace" => $e->getTrace()];
-    } catch (Exception $e) {
-        http_response_code(400);
-        $data = ["errorCode" => $e->getCode(), "errorMsg" => $e->getMessage(), "stackTrace" => $e->getTrace()];
-    }
-    echo json_encode($data);
-    exit;
+$result = validate_user();
+if ($result != 200) {
+	auth_required();
 }
-
-if (!$session->validated_password()) {
-    include(__BASE_DIR__ . "/views/header.php");
-    include(__BASE_DIR__ . "/views/login.php");
-    include(__BASE_DIR__ . "/views/footer.php");
-    exit;
-} else if ($u2f_reg_count > 0 && !$session->validated_u2f()) {
-    include(__BASE_DIR__ . "/views/header.php");
-    include(__BASE_DIR__ . "/views/u2f_auth.php");
-    include(__BASE_DIR__ . "/views/footer.php");
-    exit;
-} else {
-    $session->validated_u2f(true);
+if (isset($_REQUEST['redirect'])) {
+	http_response_code(302);
+	header("Location: ".$_REQUEST['redirect']);
 }
+?>
 
-if ($redirect) {
-    header("Location: " . $redirect, TRUE, 302);
-    exit;
-}
-
-include(__BASE_DIR__ . "/views/header.php");
-include(__BASE_DIR__ . "/views/user_info.php");
-include(__BASE_DIR__ . "/views/footer.php");
-exit;
+Hello <?=$_SERVER['PHP_AUTH_USER']?>.
