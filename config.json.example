@@ -1,5 +1,4 @@
 {
-    "realm": "my realm",
     "acl": [
         { "path": "/somepath", "valid_users": ["user1"] },
         { "path": "/" }
@@ -9,5 +8,12 @@
     ],
     "hashes": {
         "user1": "$apr1$bQNMwVWD$SjIZ6tGGv2BfcQSYq5MfZ.",
-    }
+    },
+    "cookie": {
+        "expire_seconds": 86400,
+        "path": "/",
+        "domain": "domain.tld"
+    },
+    "secret": "somethingrandomandlongish",
+    "db": "path/to/auth.db"
 }
