@@ -1,7 +1,11 @@
 {
     "acl": [
         { "path": "/somepath", "valid_users": ["user1"] },
+        { "path": "/otherpath", "valid_network": true },
         { "path": "/" }
+    ],
+    "allowed_networks": [
+        "192.168.0.0/16"
     ],
     "users": [
         { "name": "user1" }

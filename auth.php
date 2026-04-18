@@ -35,6 +35,7 @@ function open_db() {
 function init_db($db) {
 	$db->exec('DROP TABLE IF EXISTS session_context');
 	$db->exec('CREATE TABLE session_context (session TEXT NOT NULL, user TEXT NOT NULL, expires TEXT, PRIMARY KEY (session))');
+	$db->exec('CREATE TABLE user_ips (user TEXT NOT NULL, ip TEXT NOT NULL, expires TEXT NOT NULL, PRIMARY KEY (user, ip))');
 }
 
 class SessionContext
@@ -42,18 +43,19 @@ class SessionContext
 	function __construct($db) {
 		$this->db = $db;
 		$this->reset();
+		$this->clear_expired();
 	}
 
 	function reset() {
 		$this->session = NULL;
 		$this->user = NULL;
 		$this->expires = NULL;
+		$this->ip = $_SERVER["REMOTE_ADDR"];
 	}
 
 	function login($user) {
 		$this->session = hash("sha256", AUTH_SECRET.random_bytes(32));
 		$this->user = $user;
-		$this->extend();
 	}
 
 	function fetch($session) {
@@ -81,7 +83,11 @@ class SessionContext
 		$stmt->bindValue(':user', $this->user, SQLITE3_TEXT);
 		$stmt->bindValue(':expires', $this->expires->format('c'), SQLITE3_TEXT);
 		$stmt->execute();
-		$this->clear_expired();
+		$stmt = $this->db->prepare('INSERT OR REPLACE INTO user_ips (user,ip,expires) VALUES (:user,:ip,:expires)');
+		$stmt->bindValue(':user', $this->user, SQLITE3_TEXT);
+		$stmt->bindValue(':ip', $this->ip, SQLITE3_TEXT);
+		$stmt->bindValue(':expires', $this->expires->format('c'), SQLITE3_TEXT);
+		$stmt->execute();
 	}
 
 	function is_expired() {
@@ -95,7 +101,7 @@ class SessionContext
 
 	function extend() {
 		$this->expires = (new DateTime())->modify('+1 day');
-		$this->store();
+		extend_cookie($this->session);
 	}
 
 	function delete() {
@@ -105,10 +111,23 @@ class SessionContext
 			$stmt->execute();
 			$this->reset();
 		}
+		$this->clear_expired();
 	}
 
 	function clear_expired() {
 		$this->db->exec("DELETE from session_context WHERE unixepoch(expires) < unixepoch('now')");
+		$this->db->exec("DELETE from user_ips WHERE unixepoch(expires) < unixepoch('now') OR NOT user in (SELECT user FROM session_context)");
+	}
+
+	function user_ips() {
+		$stmt = $this->db->prepare("SELECT ip FROM user_ips");
+		$stmt->bindValue(":user", $this->user, SQLITE3_TEXT);
+		$user_ips = [];
+		$result = $stmt->execute();
+		while ($row = $result->fetchArray(SQLITE3_ASSOC)) {
+			array_push($user_ips, $row["ip"]);
+		};
+		return $user_ips;
 	}
 }
 
@@ -170,9 +189,64 @@ function validate_user($ctx = NULL) {
 
 	$ctx->extend();
 	$ctx->store();
-	extend_cookie($ctx->session);
 
 	return 200;
+}
+
+function match_network($ip, $network) {
+	$ip = inet_pton($ip);
+
+	if (strpos($network, '/')) {
+		list($network, $mask_len) = explode('/', $network);
+		$n = inet_pton($network);
+	} else {
+		$n = inet_pton($network);
+		$mask_len = 8*strlen($n);
+	}
+
+	$n_len = strlen($n);
+	$ip_len = strlen($ip);
+	if ($n_len != $ip_len) {
+		# IPv4 vs IPv6 mismatch
+		return false;
+	}
+
+	$mask = '';
+	for ($i = 0; $i < $n_len; $i++) {
+		$mask_byte_m = min($mask_len, 8);
+		$mask_byte = bindec(str_repeat('1', $mask_byte_m) . str_repeat('0', 8 - $mask_byte_m));
+		$mask .= pack('C', $mask_byte);
+		$mask_len -= $mask_byte_m;
+	}
+
+	if (($ip & $mask) == $n) {
+		return true;
+	}
+
+	return false;
+}
+
+function validate_ip($ctx) {
+	global $config;
+	$ip = filter_var($ctx->ip, FILTER_VALIDATE_IP, 0);
+	if ($ip === false) {
+		return false;
+	}
+	foreach ($config["allowed_networks"] as $n) {
+		if (match_network($ip, $n)) {
+			debug_log("Matched network ".$n);
+			return true;
+		}
+	}
+	$user_ips = $ctx->user_ips();
+	foreach ($user_ips as $n) {
+		if (match_network($ip, $n)) {
+			debug_log("Matched user IP ".$n);
+			return true;
+		}
+	}
+	debug_log("Denied IP ".$ip);
+	return false;
 }
 
 function validate_path() {
@@ -185,24 +259,32 @@ function validate_path() {
 	}
 
 	$uri = isset($_SERVER["REQUEST_URI"]) ? $_SERVER["REQUEST_URI"] : "";
-	debug_log("Validating path: ".$uri);
+	debug_log("Validating uri: ".$uri);
 	foreach ($config["acl"] as $acl) {
 		if (strpos($uri, $acl["path"]) === 0) {
-			debug_log("Matched ".$acl["path"]);
-			if (!isset($acl["valid_users"])) {
-				# No list of valid_users means ok for anon
+			debug_log("Matched path ".$acl["path"]);
+			if (isset($acl["valid_users"])) {
+				if ($ctx->is_valid()) {
+					if (in_array($ctx->user, $acl["valid_users"])) {
+						debug_log("User is valid");
+						return 200;
+					}
+					return 403;
+				} else {
+					debug_log("User not valid");
+					return 401;
+				}
+			}
+			if (isset($acl["valid_network"]) && $acl["valid_network"]) {
+				if (validate_ip($ctx) == true) {
+					return 200;
+				}
+			}
+			if (isset($acl["public"]) && $acl["public"] === true) {
 				debug_log("Public access");
 				return 200;
 			}
-			if ($ctx->is_valid()) {
-				if (in_array($ctx->user, $acl["valid_users"])) {
-					debug_log("User is valid");
-					return 200;
-				}
-				return 403;
-			} else {
-				return 401;
-			}
+			return 401;
 		}
 	}
 	# Default to no access
@@ -224,8 +306,8 @@ function try_login($ctx, $user, $pass) {
 	}
 
 	$ctx->login($user);
+	$ctx->extend();
 	$ctx->store();
-	extend_cookie($ctx->session);
 
 	debug_log("Validated user: ". $user);
 	return 200;
