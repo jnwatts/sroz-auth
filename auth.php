@@ -5,7 +5,7 @@ $config = json_decode(file_get_contents($AUTH_JSON), true);
 define('AUTH_DB', $config["db"]);
 define('AUTH_SECRET', $config["secret"]);
 define('AUTH_COOKIE', hash("sha256", AUTH_SECRET."session"));
-$debug = true;
+$debug = false;
 
 set_exception_handler(function ($e) {
 	error_log($e);
