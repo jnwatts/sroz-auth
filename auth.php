@@ -338,5 +338,11 @@ if (isset($_REQUEST['redirect'])) {
 	header("Location: ".$_REQUEST['redirect']);
 }
 ?>
-
+<head>
+<link href="/theme.css" rel="stylesheet" type="text/css">
+<link href="/bootstrap_3.3.7.min.css" rel="stylesheet" type="text/css">
+<link href="/index.css" rel="stylesheet" type="text/css">
+</head>
+<body>
 Hello <?=$ctx->user?>.
+</body>

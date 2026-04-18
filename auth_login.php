@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <title>Auth</title>
+    <link href="/theme.css" rel="stylesheet" type="text/css">
     <link href="/bootstrap_3.3.7.min.css" rel="stylesheet" type="text/css">
+    <link href="/index.css" rel="stylesheet" type="text/css">
 </head>
 <body>
 <div class="container">
